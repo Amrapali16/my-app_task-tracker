@@ -1,114 +1,140 @@
-import React, { useState, useEffect } from 'react'
-import { BrowserRouter as Router } from 'react-router-dom'
-import Header from './components/Header'
-import Footer from './components/Footer'
-import Tasks from './components/Tasks'
-import AddTask from './components/AddTask'
-import About from './components/About'
+import React, { useEffect, useState } from "react";
+
+import Header from './components/molecules/header';
+
+import './App.css';
+
+import useStyles from './style';
+
+import Sidebar from './components/molecules/Sidebar';
+
+import MainContent from './components/molecules/main-content';
+
+import { getFirestore, collection, getDocs, addDoc, deleteDoc, doc } from 'firebase/firestore';
+
+import { app } from "./firebase"
+
+import Auth from "./components/auth";
+
+import { GoogleAuthProvider, getAuth, signInWithPopup } from "firebase/auth";
+
+
+
 
 const App = () => {
-  const [showAddTask, setShowAddTask] = useState(false)
-  const [tasks, setTasks] = useState([])
 
-  useEffect(() => {
-    const getTasks = async () => {
-      const tasksFromServer = await fetchTasks()
-      setTasks(tasksFromServer)
-    }
+const classes = useStyles();
 
-    getTasks()
+const [selectedSidebar, setSelectedSidebar] = useState("Keep");
+
+const [ notes, setNotes ] = useState([]);
+
+const [ filteredNotes, setfilteredNotes] = useState([]);
+
+const [currentUser, setCurrentUser] = useState(null);
+
+const [userId , setUserId] = useState("dummy");
 
 
-  }, [])
+  const db = getFirestore(app);
+  const provider = new GoogleAuthProvider();
+  const auth = getAuth();
 
-  // Fetch Tasks
-  const fetchTasks = async () => {
-    const res = await fetch('http://localhost:3000/tasks')
-    const data = await res.json()
+  const getNotes = async () => {
+  const notesRef =  collection( db, userId);
+    const notes = await getDocs(notesRef);
+    const noteList = notes.docs.map((doc) =>{
+    return  { id: doc.id, ...doc.data() };
+    });
 
-    return data
-  }
-  
+    setNotes(noteList);
+    setfilteredNotes(noteList);
 
-  // Fetch Task
-  const fetchTask = async (id) => {
-    const res = await fetch(`http://localhost:3000/tasks/${id}`)
-    const data = await res.json()
+  };
+    // console.log("notes--->  ", noteList);
+useEffect (() => {
 
-    return data
-  }
+    getNotes();
 
-  // Add Task
-  const addTask = async (task) => {
-    const id = Math.floor(Math.random() * 10000) + 1
-    const newTask = { id, ...task }
-    setTasks([...tasks, newTask])
-  }
+  }, []);
 
-  // Delete Task
-  const deleteTask = async (id) => {
-     await fetch(`http://localhost:3000/tasks/${id}`, {
-      method: 'DELETE',
-  })
-      setTasks(tasks.filter((task) => task.id !==id))
-    
-  }
-     
-    // res.status === 200
-    //   ? setTasks(tasks.filter((task) => task.id !== id))
-    //   : alert('Error Deleting This Task')
-  
-  
-  // Toggle Reminder
-  const toggleReminder = async (id) => {
-    const taskToToggle = await fetchTask(id)
-    const updTask = { ...taskToToggle, reminder: !taskToToggle.reminder }
+  const filterNotes = (search) =>
+  {
+    let tempNote= notes ;
+    if(search) {
 
-    const res = await fetch(`http://localhost:3000/tasks/${id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-type': 'application/json',
-      },
-      body: JSON.stringify(updTask),
+    const filteredNotes = tempNote.filter(note => note.title.match(search));
+
+    setfilteredNotes(filteredNotes);
+
+     } else {
+         setfilteredNotes(tempNote);
+     }
+  };
+
+   const createNote = async (note) => {
+
+     console.log("created", note);
+
+     const noteRef = collection(db, userId);
+     const dcRef = await addDoc(noteRef, note);
+     await getNotes();
+     console.log("dcRef", dcRef);
+
+   };
+
+   const deleteNote = async (id) => {
+
+    await deleteDoc(doc(db, userId, id));
+
+    await getNotes();   
+
+   };
+
+   const handleSignIn = ()  => {
+    signInWithPopup(auth, provider)
+    .then((res)=> {
+    setCurrentUser(res.user);
+    setUserId(res.user.uid);
+
     })
 
-    const data = await res.json()
+    .catch((err) => {
+      console.log("err", err);
 
-    setTasks(
-      tasks.map((task) =>
-        task.id === id ? { ...task, reminder: data.reminder } : task
-      )
-    )
-  }
+    });
+    
+   };
 
-  return (
-    <Router>
-      <div className='container'>
-        <Header
-          onAdd={() => setShowAddTask(!showAddTask)}
-          showAdd={showAddTask}
-        />
+
+    return (
+        <>
+        {currentUser ? (
+
+        <>
+        <Header 
+        currentUser={currentUser}
         
-            <>
-              {showAddTask && <AddTask onAdd={addTask} />}
-              {tasks.length > 0 ? (
-                <Tasks
-                  tasks={tasks}
-                  onDelete={deleteTask}
-                  onToggle={toggleReminder}
-                />
-              ) : (
-                'No Tasks To Show'
-              )}
-            </>
-          
+        filterNotes={filterNotes} 
         
-       
-        <Footer />
-        <About/>
-      </div>
-    </Router>
-  )
-}
+        selectedSidebar={selectedSidebar}
+        /> 
+
+        <div className={classes.container}>
+        
+        <Sidebar setSelectedSidebar={setSelectedSidebar} />
+        <MainContent {...{ setNotes, createNote, deleteNote }}
+        
+        notes= {filteredNotes}
+        /> 
+
+       </div> </>): (
+         <Auth handleSignIn={handleSignIn} />
+
+       )}
+  
+        </>
+    );
+};
 
 export default App
